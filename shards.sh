@@ -28,7 +28,7 @@ rm -rf $DBPATH && mkdir -p $DBPATH/config $DBPATH/data
 $SERVER_VERSION/mongod -configsvr --port $PORT --dbpath=$DBPATH/config &
 S1=$!
 sleep 1
-$SERVER_VERSION/mongos --configdb mongodb-4.local:$PORT --port $(($PORT+1)) &
+$SERVER_VERSION/mongos --configdb auckland.local:$PORT --port $(($PORT+1)) &
 S2=$!
 $SERVER_VERSION/mongod --dbpath=$DBPATH/data --port $(($PORT+2)) &
 S3=$!
@@ -36,8 +36,7 @@ S3=$!
 echo "S1=$S1 S2=$S2 S3=$S3"
 
 sleep 2
-
-mongo --port $(($PORT+1)) --eval "JSON.stringify(sh.addShard(\"mongodb-4.local:$(($PORT+2))\"))"
+$SERVER_VERSION/mongo --port $(($PORT+1)) --eval "JSON.stringify(sh.addShard(\"auckland.local:$(($PORT+2))\"))"
 
 echo "Sharded cluster $RS initiated"
 cat

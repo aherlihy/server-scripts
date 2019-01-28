@@ -40,9 +40,9 @@ sleep 2
 cfg="{
     _id: \"rs$RS\",
     members: [
-        {_id: 0, host: 'mongodb-4.local:$C_PORT'},
-        {_id: 1, host: 'mongodb-4.local:$(($C_PORT+1))'},
-        {_id: 2, host: 'mongodb-4.local:$(($C_PORT+2))'}
+        {_id: 0, host: 'auckland.local:$C_PORT'},
+        {_id: 1, host: 'auckland.local:$(($C_PORT+1))'},
+        {_id: 2, host: 'auckland.local:$(($C_PORT+2))'}
     ],
     configsvr:true
 }"
@@ -51,16 +51,16 @@ $SERVER_VERSION/mongo --port $C_PORT --eval "JSON.stringify(rs.initiate($cfg))"
 sleep 2
 
 # Start mongos
-$SERVER_VERSION/mongos --port $PORT --configdb mongodb-4.local:$C_PORT,mongodb-4.local:$(($C_PORT+1)),mongodb-4.local:$(($C_PORT+2)) &> /dev/null &
+$SERVER_VERSION/mongos --port $PORT --configdb "rs"$RS/auckland.local:$C_PORT,auckland.local:$(($C_PORT+1)),auckland.local:$(($C_PORT+2)) &
 S4=$!
 echo "S4=$S4"
 
 # Start replset shard
-$SERVER_VERSION/mongod --port $S_PORT --dbpath=$SPATH/rs$RS-0 --replSet=rs$SRS &> /dev/null &
+$SERVER_VERSION/mongod --port $S_PORT --shardsvr --dbpath=$SPATH/rs$RS-0 --replSet=rs$SRS &> /dev/null &
 S5=$!
-$SERVER_VERSION/mongod --port $(($S_PORT+1)) --dbpath=$SPATH/rs$RS-1 --replSet=rs$SRS &> /dev/null &
+$SERVER_VERSION/mongod --port $(($S_PORT+1)) --shardsvr --dbpath=$SPATH/rs$RS-1 --replSet=rs$SRS &> /dev/null &
 S6=$!
-$SERVER_VERSION/mongod --port $(($S_PORT+2)) --dbpath=$SPATH/rs$RS-2 --replSet=rs$SRS &> /dev/null &
+$SERVER_VERSION/mongod --port $(($S_PORT+2)) --shardsvr --dbpath=$SPATH/rs$RS-2 --replSet=rs$SRS &> /dev/null &
 S7=$!
 
 echo "S5=$S1 S6=$S2 S7=$S3"
@@ -70,15 +70,15 @@ sleep 2
 cfg="{
     _id: \"rs$SRS\",
     members: [
-        {_id: 0, host: 'mongodb-4.local:$S_PORT'},
-        {_id: 1, host: 'mongodb-4.local:$(($S_PORT+1))'},
-        {_id: 2, host: 'mongodb-4.local:$(($S_PORT+2))'}
+        {_id: 0, host: 'auckland.local:$S_PORT'},
+        {_id: 1, host: 'auckland.local:$(($S_PORT+1))'},
+        {_id: 2, host: 'auckland.local:$(($S_PORT+2))'}
     ]
 }"
 echo "Initiating repl shard with $cfg"
 $SERVER_VERSION/mongo --port $S_PORT --eval "JSON.stringify(rs.initiate($cfg))"
 
 sleep 10
-$SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.addShard(\"rs$SRS/mongodb-4.local:$(($S_PORT))\"))"
+$SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.addShard(\"rs$SRS/auckland.local:$(($S_PORT))\"))"
 
 cat
