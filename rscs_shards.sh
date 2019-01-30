@@ -46,18 +46,18 @@ function mongo_cmd {
 
     if [[ "$1" = "config" ]]; then
         cfg="{
-           _id: 'rs$RS',
+            _id: 'rs$RS',
+            configsvr: true,
             members: [
                 {_id: 0, host: 'localhost:$C_PORT'},
                 {_id: 1, host: 'localhost:$(($C_PORT+1))'},
                 {_id: 2, host: 'localhost:$(($C_PORT+2))'}
-            ],
-            configsvr: true
+            ]
         }"
         port=$C_PORT
     else
         cfg="{
-            _id: 'rs$SRS',
+            _id: 'rs-shard$SRS',
             members: [
                 {_id: 0, host: 'localhost:$S_PORT'},
                 {_id: 1, host: 'localhost:$(($S_PORT+1))'},
@@ -95,7 +95,6 @@ function debug {
        shift 1
        $@ > /dev/null &
     else
-        echo "HERE@!" "$@"
        $@
     fi
 }
@@ -107,27 +106,27 @@ debug rm -rf $DBPATH
 debug mkdir -p "$CPATH/configdb-0" "$CPATH/configdb-1" "$CPATH/configdb-2" "$SPATH/rs$RS-0" "$SPATH/rs$RS-1" "$SPATH/rs$RS-2"
 
 # Start config repl set
-debug 'quiet' $SERVER_VERSION/mongod --port $C_PORT --dbpath=$CPATH"/configdb-0" --replSet="rs"$RS --configsvr
+debug 'quiet' $SERVER_VERSION/mongod --configsvr --replSet="rs$RS" --port $C_PORT --dbpath="$CPATH/configdb-0"
 PIDS[${#PIDS[@]}]="$!"
-debug 'quiet' $SERVER_VERSION/mongod --port $(($C_PORT+1)) --dbpath=$CPATH"/configdb-1" --replSet="rs"$RS --configsvr
+debug 'quiet' $SERVER_VERSION/mongod --configsvr --replSet="rs$RS" --port $(($C_PORT+1)) --dbpath="$CPATH/configdb-1"
 PIDS[${#PIDS[@]}]="$!"
-debug 'quiet' $SERVER_VERSION/mongod --port $(($C_PORT+2)) --dbpath=$CPATH"/configdb-2" --replSet="rs"$RS --configsvr
+debug 'quiet' $SERVER_VERSION/mongod --configsvr --replSet="rs$RS" --port $(($C_PORT+2)) --dbpath="$CPATH/configdb-2"
 PIDS[${#PIDS[@]}]="$!"
 
 debug "skip" sleep 2
 
 mongo_cmd 'config'
 
-# Start mongos
-debug 'quiet' $SERVER_VERSION/mongos --port $PORT --configdb "rs"$RS/localhost:$C_PORT,localhost:$(($C_PORT+1)),localhost:$(($C_PORT+2))
+# Start replset shard
+debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS" --port $S_PORT --dbpath="$SPATH/rs$RS-0"
+PIDS[${#PIDS[@]}]="$!"
+debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS" --port $(($S_PORT+1)) --dbpath="$SPATH/rs$RS-1"
+PIDS[${#PIDS[@]}]="$!"
+debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS" --port $(($S_PORT+2)) --dbpath="$SPATH/rs$RS-2"
 PIDS[${#PIDS[@]}]="$!"
 
-# Start replset shard
-debug 'quiet' $SERVER_VERSION/mongod --port $S_PORT --shardsvr --dbpath=$SPATH/rs$RS-0 --replSet=rs$SRS
-PIDS[${#PIDS[@]}]="$!"
-debug 'quiet' $SERVER_VERSION/mongod --port $(($S_PORT+1)) --shardsvr --dbpath=$SPATH/rs$RS-1 --replSet=rs$SRS
-PIDS[${#PIDS[@]}]="$!"
-debug 'quiet' $SERVER_VERSION/mongod --port $(($S_PORT+2)) --shardsvr --dbpath=$SPATH/rs$RS-2 --replSet=rs$SRS
+# Start mongos
+debug 'quiet' $SERVER_VERSION/mongos --configdb "rs$RS/localhost:$C_PORT,localhost:$(($C_PORT+1)),localhost:$(($C_PORT+2))" --port $PORT
 PIDS[${#PIDS[@]}]="$!"
 
 debug "skip" sleep 2
@@ -135,6 +134,10 @@ debug "skip" sleep 2
 mongo_cmd 'shard'
 
 debug "skip" sleep 10
-debug $SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.addShard(\"rs$SRS/localhost:$(($S_PORT))\"))"
+debug $SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.addShard(\"rs-shard$SRS/localhost:$(($S_PORT))\"))"
+
+
+debug $SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.enableSharding('test'))"
 
 debug "skip" cat
+
