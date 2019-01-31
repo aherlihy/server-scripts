@@ -3,7 +3,7 @@
 if [ $# -ne 3 ] && [ $# -ne 4 ] && [ $# -ne 5 ]; then
     echo "Usage: replset.sh <server_version> <config rs #> <shard rs #> --debug? --quiet?"
     echo "    server_version assumes server exists in /opt/mongodb-osx-x86_64-<version>/bin"
-    echo "    --debug doesn't run anything, just runs the mongo and mongod commands that would be run"
+    echo "    --debug doesn't run anything, just prints the mongo and mongod commands that would be run"
     echo "    --quiet pipes the server output to dev/null (warning, could miss errors then)"
     exit
 fi
