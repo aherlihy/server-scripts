@@ -90,7 +90,7 @@ function debug {
        $@
     elif [[ -z "$QUIET" ]] && [[ "$1" = "quiet" ]]; then
        shift 1
-       $@
+       $@ &
     elif [[ "$1" = "quiet" ]]; then
        shift 1
        $@ > /dev/null &
