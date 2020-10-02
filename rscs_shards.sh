@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-if [ $# -ne 3 ] && [ $# -ne 4 ] && [ $# -ne 5 ]; then
-    echo "Usage: replset.sh <server_version> <config rs #> <shard rs #> --debug? --quiet?"
+if [ $# -ne 4 ] && [ $# -ne 5 ] && [ $# -ne 6 ]; then
+    echo "Usage: replset.sh <server_version> <config rs #> <shard rs #> <n shards> --debug? --quiet?"
     echo "    server_version assumes server exists in /opt/mongodb-osx-x86_64-<version>/bin"
     echo "    --debug doesn't run anything, just prints the mongo and mongod commands that would be run"
     echo "    --quiet pipes the server output to dev/null (warning, could miss errors then)"
@@ -11,6 +11,8 @@ fi
 SERVER_VERSION="/opt/mongodb-osx-x86_64-"$1"/bin"
 RS=$2
 SRS=$3
+N_SHARDS=$4
+echo $N_SHARDS
 DBPATH="data-rcsc$RS"
 CPATH="$DBPATH/config"
 SPATH="$DBPATH/shards"
@@ -57,14 +59,14 @@ function mongo_cmd {
         port=$C_PORT
     else
         cfg="{
-            _id: 'rs-shard$SRS',
+            _id: 'rs-shard$SRS-$2',
             members: [
-                {_id: 0, host: 'localhost:$S_PORT'},
-                {_id: 1, host: 'localhost:$(($S_PORT+1))'},
-                {_id: 2, host: 'localhost:$(($S_PORT+2))'}
+                {_id: 0, host: 'localhost:$(($S_PORT+$3))'},
+                {_id: 1, host: 'localhost:$(($S_PORT+1+$3))'},
+                {_id: 2, host: 'localhost:$(($S_PORT+2+$3))'}
             ]
         }"
-        port=$S_PORT
+        port=$(($S_PORT+$3))
     fi
 
 
@@ -103,7 +105,13 @@ trap clean_up SIGHUP SIGINT SIGTERM
 
 
 debug rm -rf $DBPATH
-debug mkdir -p "$CPATH/configdb-0" "$CPATH/configdb-1" "$CPATH/configdb-2" "$SPATH/rs$RS-0" "$SPATH/rs$RS-1" "$SPATH/rs$RS-2"
+debug mkdir -p "$CPATH/configdb-0" "$CPATH/configdb-1" "$CPATH/configdb-2"
+
+for shardCount in `seq 0 $(($N_SHARDS - 1))`;
+  do
+      debug mkdir -p "$SPATH/rs$RS-$shardCount-0" "$SPATH/rs$RS-$shardCount-1" "$SPATH/rs$RS-$shardCount-2"
+  done
+
 
 # Start config repl set
 debug 'quiet' $SERVER_VERSION/mongod --configsvr --replSet="rs$RS" --port $C_PORT --dbpath="$CPATH/configdb-0"
@@ -117,13 +125,18 @@ debug "skip" sleep 2
 
 mongo_cmd 'config'
 
-# Start replset shard
-debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS" --port $S_PORT --dbpath="$SPATH/rs$RS-0"
-PIDS[${#PIDS[@]}]="$!"
-debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS" --port $(($S_PORT+1)) --dbpath="$SPATH/rs$RS-1"
-PIDS[${#PIDS[@]}]="$!"
-debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS" --port $(($S_PORT+2)) --dbpath="$SPATH/rs$RS-2"
-PIDS[${#PIDS[@]}]="$!"
+for n in `seq 0 $(($N_SHARDS - 1))`;
+  do
+      calcPort=$((3*$n))
+      # Start replset shard
+      debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS-$n" --port $(($S_PORT+$calcPort)) --dbpath="$SPATH/rs$RS-$n-0"
+      PIDS[${#PIDS[@]}]="$!"
+      debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS-$n" --port $(($S_PORT+$calcPort+1)) --dbpath="$SPATH/rs$RS-$n-1"
+      PIDS[${#PIDS[@]}]="$!"
+      debug 'quiet' $SERVER_VERSION/mongod --shardsvr --replSet="rs-shard$SRS-$n" --port $(($S_PORT+$calcPort+2)) --dbpath="$SPATH/rs$RS-$n-2"
+      PIDS[${#PIDS[@]}]="$!"
+      mongo_cmd 'shard' $n $calcPort
+  done
 
 # Start mongos
 debug 'quiet' $SERVER_VERSION/mongos --configdb "rs$RS/localhost:$C_PORT,localhost:$(($C_PORT+1)),localhost:$(($C_PORT+2))" --port $PORT
@@ -131,11 +144,13 @@ PIDS[${#PIDS[@]}]="$!"
 
 debug "skip" sleep 2
 
-mongo_cmd 'shard'
 
 debug "skip" sleep 10
-debug $SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.addShard(\"rs-shard$SRS/localhost:$(($S_PORT))\"))"
-
+for n in `seq 0 $(($N_SHARDS - 1))`;
+  do
+    calcPort=$((3*$n))
+    debug $SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.addShard(\"rs-shard$SRS-$n/localhost:$(($S_PORT+$calcPort))\"))"
+  done
 
 debug $SERVER_VERSION/mongo --port $PORT --eval "JSON.stringify(sh.enableSharding('test'))"
 
